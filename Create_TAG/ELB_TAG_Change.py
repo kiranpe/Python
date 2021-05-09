@@ -15,7 +15,7 @@ def lambda_handler():
       Type = 'alb'
       Name_TAG = system + "-" + layer_TAG + "-" + Type
       
-      ARNs = ['arn:aws:elasticloadbalancing:us-east-2:901593578477:loadbalancer/app/testing/ab807acac88ae960', 'arn:aws:elasticloadbalancing:us-east-2:901593578477:loadbalancer/app/test/3c6b2b1b80eda0e6']
+      ARNs = ['arn:aws:elasticloadbalancing:us-east-2:9015xxxxxx477:loadbalancer/app/testing/axxxxxxc88ae960', 'arn:aws:elasticloadbalancing:us-east-2:901xxxxx477:loadbalancer/app/test/3c6b2bxxxxa0e6']
       
       
       for arn in ARNs:
