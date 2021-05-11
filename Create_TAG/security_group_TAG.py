@@ -8,7 +8,7 @@ os.environ['AWS_DEFAULT_REGION'] = "us-east-2"
 
 def lambda_handler():
     ec2 = boto3.resource('ec2')
-    security_group = ec2.SecurityGroup('sg-0ef36f6d747b4568d')
+    security_group = ec2.SecurityGroup('sg-xxxxxxxx8d')
     tag = security_group.create_tags(
 
        Tags=[
