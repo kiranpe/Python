@@ -9,7 +9,7 @@ os.environ['AWS_DEFAULT_REGION'] = "us-east-2"
 def lambda_handler():
     client = boto3.client('elbv2')
       
-    ARNs = 'arn:aws:elasticloadbalancing:us-east-2:901593xxxxxxx:loadbalancer/app/test/b7a4102517408d86'
+    ARNs = ['arn:aws:elasticloadbalancing:us-east-2:9015xxxx77:loadbalancer/app/test/b7a4102517408d86',]
       
     for arn in ARNs:  
       response = client.add_tags(ResourceArns=[arn],
@@ -21,6 +21,7 @@ def lambda_handler():
          ]
       )
       
+
       elb = client.describe_tags(ResourceArns=[arn],)
       
       for tagvalues in elb['TagDescriptions']:
@@ -46,7 +47,7 @@ def lambda_handler():
       print(Name_Tag)
       print()
       
-      response = client.add_tags(ResourceArns=[ARNs], Tags=[{'Key': 'Name', 'Value': Name_Tag,},])
+      response = client.add_tags(ResourceArns=[arn], Tags=[{'Key': 'Name', 'Value': Name_Tag,},])
       
       print(response)
 
