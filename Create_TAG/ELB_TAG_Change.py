@@ -9,7 +9,7 @@ os.environ['AWS_DEFAULT_REGION'] = "us-east-2"
 def lambda_handler():
       client = boto3.client('elbv2')
       
-      ARNs = 'arn:aws:elasticloadbalancing:us-east-2:901593578477:loadbalancer/app/test/b7a4102517408d86'
+      ARNs = 'arn:aws:elasticloadbalancing:us-east-2:901593xxxxxxx:loadbalancer/app/test/b7a4102517408d86'
       
       response = client.add_tags(ResourceArns=[ARNs],
          Tags=[{'Key': 'System', 'Value': 'test',}, {'Key': 'CreatedBy', 'Value': 'Kiran',}, {'Key': 'Type', 'Value': 'alb',}, {'Key': 'Layer', 'Value': 'app'},
