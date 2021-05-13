@@ -10,7 +10,7 @@ def lambda_handler():
 
      ec2 = boto3.resource('ec2')
 
-     ids = ('vol-00568fda8f58be6c5', 'vol-0b1b887e556dc51c2')
+     ids = ['vol-00568fda8f58be6c5', 'vol-0b1b887e556dc51c2']
 
      for vol_id in ids:
 
