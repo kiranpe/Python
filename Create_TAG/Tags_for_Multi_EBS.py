@@ -9,7 +9,7 @@ os.environ['AWS_DEFAULT_REGION'] = "us-east-2"
 def lambda_handler():
   client = boto3.client('ec2')
     
-  volumes = ['vol-00568fda8f58be6c5', 'vol-0b1b887e556dc51c2']
+  volumes = ['vol-00568fdxxx58be6c5', 'vol-0b1b88xxxdc51c2']
   
   for ids in volumes:  
     instance = client.describe_volumes(VolumeIds=[ids])
