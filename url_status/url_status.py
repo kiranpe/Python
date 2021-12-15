@@ -5,8 +5,8 @@ import sys
 import socket
 import urllib.request
 
-host=socket.gethostname()
-port=sys.argv[1]
+host=sys.argv[1]
+port=sys.argv[2]
 url=("http://" +host+ ":" +port+"/index.html")
 
 print(url)
