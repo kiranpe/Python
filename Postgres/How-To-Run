@@ -1,5 +1,5 @@
 #Run below command to start postgress container
-docker run -d --rm -e POSTGRES_PASSWORD=postgres -p5401:5432 postgres:12.3-alpine
+docker run -d --rm -e POSTGRES_PASSWORD=postgres -p 5401:5432 postgres:12.3-alpine
 
 #Create database and users table by connecting to DB using below command.. update host with your docker gateway ip
 docker run -it --rm postgres:12.3-alpine psql -h 172.17.0.1 -p 5401 -U postgres
