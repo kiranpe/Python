@@ -16,7 +16,6 @@ with open("data.txt",'r') as file:
     marketvalue = lst[2].strip()
     role = lst[3].strip()
    
-    idx += 1 
     print(name)
     print(email)
     print(marketvalue)
