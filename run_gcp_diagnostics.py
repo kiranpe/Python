@@ -1,13 +1,3 @@
-"""
-The service account that runs this test must have the following roles:
-- roles/compute.instanceAdmin.v1
-- roles/compute.securityAdmin
-- roles/iam.serviceAccountAdmin
-- roles/iam.serviceAccountKeyAdmin
-- roles/iam.serviceAccountUser
-The Project Editor legacy role is not sufficient because it does not grant
-several necessary permissions.
-"""
 from __future__ import annotations
 
 import base64
