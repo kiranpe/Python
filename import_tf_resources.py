@@ -81,6 +81,16 @@ def build_imports(modules, resource_type, mode):
 
     return imports
 
+def write_import_file(imports, output_file):
+    with open(output_file, "w") as f:
+        for target, tf_id in imports:
+            f.write(f'''import {{
+  to = {target}
+  id = {tf_id}
+}}\n\n''')
+    logging.info(f"✅ Wrote {len(imports)} import blocks to {output_file}")
+
+
 def run_imports(imports, execute=False):
     tf = Terraform()
     for target, resource_id in imports:
@@ -98,6 +108,7 @@ def main():
     setup_logger(args.log)
     modules = parse_modules(args.file)
     imports = build_imports(modules, args.type, args.mode)
+    write_import_file(imports, args.output)
     run_imports(imports, args.execute)
 
 if __name__ == "__main__":
