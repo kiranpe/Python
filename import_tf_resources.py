@@ -2,6 +2,7 @@ import hcl2
 from python_terraform import Terraform
 import argparse
 import logging
+import os
 
 RESOURCE_MAP = {
     "service_account": {
@@ -28,14 +29,15 @@ RESOURCE_MAP = {
 }
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Terraform import automation for multiple resource types")
-    parser.add_argument("--file", default="resources.tf", help="Path to .tf file")
-    parser.add_argument("--type", choices=["service_account", "storage_bucket", "compute_instance"], required=True)
-    parser.add_argument("--mode", choices=["member", "binding"], default="member", help="IAM mode (only for service_account)")
-    parser.add_argument("--project-number", default=None, help="Project number for Pub/Sub service account")
-    parser.add_argument("--output", default="import.tf", help="Output file to write import blocks")
-    parser.add_argument("--execute", action="store_true", help="Run terraform import (default is dry-run)")
+    parser = argparse.ArgumentParser(description="Generate import blocks for Terraform modules")
+    parser.add_argument("--file", default="resources.tf", help="Path to the .tf file")
+    parser.add_argument("--type", choices=RESOURCE_MAP.keys(), required=True)
+    parser.add_argument("--output", default="import.tf", help="Output import.tf file")
+    parser.add_argument("--execute", action="store_true", help="Optionally run terraform import")
     parser.add_argument("--log", help="Log output to file")
+    parser.add_argument("--project-number", default=None, help="Project number for IAM service account email")
+    parser.add_argument("--export", action="store_true", help="Output exportable project ID for sourcing")
+    parser.add_argument("--fix-state", action="store_true", help="Fix missing 'project' in IAM state after apply")
     return parser.parse_args()
 
 def setup_logger(log_file=None):
@@ -49,46 +51,38 @@ def parse_modules(file_path):
     with open(file_path, 'r') as f:
         return hcl2.load(f).get("module", [])
 
-def build_imports(modules, resource_type, mode):
+def build_imports(modules, resource_type, project_number=None):
     imports = []
+    token_creator_added = False
+
     for module in modules:
         for mod_name, attrs in module.items():
             project_id = attrs.get("project_id", "")
             name = attrs.get("name", "")
 
-            # if not project_id or not name:
-            #     logging.warning(f"Skipping {mod_name} — missing project_id or name")
-            #     continue
-
             if resource_type == "service_account":
                 sa_email = f"{name}@{project_id}.iam.gserviceaccount.com"
-                imports.append((
-                    f"module.{mod_name}.{RESOURCE_MAP[resource_type]['base']}",
-                    f"projects/{project_id}/serviceAccounts/{sa_email}"
-                ))
+                imports.append((f"module.{mod_name}.{RESOURCE_MAP[resource_type]['base']}",
+                                 f"projects/{project_id}/serviceAccounts/{sa_email}"))
 
                 for role in attrs.get("iam_roles", []):
-                    tf_res = RESOURCE_MAP[resource_type]["iam"][mode]
-                    tf_target = f'module.{mod_name}.{tf_res}["{role}"]'
-                    if mode == "member":
-                        tf_id = f"projects/{project_id}/serviceAccounts/{sa_email} roles/{role}"
-                    else:
-                        tf_id = f"projects/{project_id}/serviceAccounts/{sa_email}/roles/{role}"
-                    imports.append((tf_target, tf_id))
+                    target = f"module.{mod_name}.{RESOURCE_MAP[resource_type]['iam']['member']}[\"{role}\"]"
+                    resource_id = f"projects/{project_id}/serviceAccounts/{sa_email} roles/{role}"
+                    imports.append((target, resource_id))
 
             elif resource_type == "storage_bucket":
-                tf_target = f"module.{mod_name}.{RESOURCE_MAP[resource_type]['base']}"
-                tf_id = f"{project_id}/{name}"
-                imports.append((tf_target, tf_id))
+                bucket_name = attrs.get("bucket_name", "")
+                if bucket_name:
+                    tf_target = f"module.{mod_name}.{RESOURCE_MAP[resource_type]['base']}"
+                    tf_id = bucket_name
+                    imports.append((tf_target, tf_id))
 
             elif resource_type == "compute_instance":
-                zone = attrs.get("zone")
-                if not zone:
-                    logging.warning(f"Skipping {mod_name} — missing zone for compute instance")
-                    continue
-                tf_target = f"module.{mod_name}.{RESOURCE_MAP[resource_type]['base']}"
-                tf_id = f"projects/{project_id}/zones/{zone}/instances/{name}"
-                imports.append((tf_target, tf_id))
+                zone = attrs.get("zone", "")
+                if name and zone:
+                    tf_target = f"module.{mod_name}.{RESOURCE_MAP[resource_type]['base']}"
+                    tf_id = f"projects/{project_id}/zones/{zone}/instances/{name}"
+                    imports.append((tf_target, tf_id))
 
             elif resource_type == "pubsub":
                 topic_name = attrs.get("topic")
@@ -96,6 +90,12 @@ def build_imports(modules, resource_type, mode):
                     tf_target = f"module.{mod_name}.{RESOURCE_MAP[resource_type]['topic']}[0]"
                     tf_id = f"projects/{project_id}/topics/{topic_name}"
                     imports.append((tf_target, tf_id))
+
+                    if project_number:
+                        sa_email = f"service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+                        iam_target = f"module.{mod_name}.{RESOURCE_MAP[resource_type]['iam_topic']}[\"roles/pubsub.publisher\"]"
+                        iam_id = f"projects/{project_id}/topics/{topic_name} roles/pubsub.publisher serviceAccount:{sa_email}"
+                        imports.append((iam_target, iam_id))
 
                 push_subs = attrs.get("push_subscriptions", [])
                 for sub in push_subs:
@@ -107,13 +107,9 @@ def build_imports(modules, resource_type, mode):
 
                         if project_number:
                             sa_email = f"service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com"
-                            # iam_target = f'module.{mod_name}.{RESOURCE_MAP[resource_type]["iam_subscription"]}["{sub_name}_push"]'
-                            # iam_id = f"projects/{project_id}/subscriptions/{sub_name} roles/pubsub.subscriber serviceAccount:{sa_email}"
-                            # imports.append((iam_target, iam_id))
-
-                            tf_target = f"module.{mod_name}.{RESOURCE_MAP[resource_type]['project_iam']}[0]"
-                            tf_id = f"projects/{project_id}/roles/iam.serviceAccountTokenCreator serviceAccount:{sa_email}"
-                            imports.append((tf_target, tf_id))
+                            iam_target = f'module.{mod_name}.{RESOURCE_MAP[resource_type]["iam_subscription"]}["{sub_name}_push"]'
+                            iam_id = f"projects/{project_id}/subscriptions/{sub_name} roles/pubsub.subscriber serviceAccount:{sa_email}"
+                            imports.append((iam_target, iam_id))
 
                 pull_subs = attrs.get("pull_subscriptions", [])
                 for sub in pull_subs:
@@ -125,25 +121,24 @@ def build_imports(modules, resource_type, mode):
 
                         if project_number:
                             sa_email = f"service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com"
-                            # iam_target = f'module.{mod_name}.{RESOURCE_MAP[resource_type]["iam_subscription"]}["{sub_name}_pull"]'
-                            # iam_id = f"projects/{project_id}/subscriptions/{sub_name} roles/pubsub.subscriber serviceAccount:{sa_email}"
-                            # imports.append((iam_target, iam_id))
+                            iam_target = f'module.{mod_name}.{RESOURCE_MAP[resource_type]["iam_subscription"]}["{sub_name}_pull"]'
+                            iam_id = f"projects/{project_id}/subscriptions/{sub_name} roles/pubsub.subscriber serviceAccount:{sa_email}"
+                            imports.append((iam_target, iam_id))
 
-                            tf_target = f"module.{mod_name}.{RESOURCE_MAP[resource_type]['project_iam']}[0]"
-                            tf_id = f"projects/{project_id}/roles/iam.serviceAccountTokenCreator serviceAccount:{sa_email}"
-                            imports.append((tf_target, tf_id))
+                if project_number and not token_creator_added:
+                    sa_email = f"service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+                    tf_target = f"module.{mod_name}.{RESOURCE_MAP[resource_type]['project_iam']}[0]"
+                    tf_id = f"projects/{project_id}/roles/iam.serviceAccountTokenCreator serviceAccount:{sa_email}"
+                    imports.append((tf_target, tf_id))
+                    token_creator_added = True
 
     return imports
 
 def write_import_file(imports, output_file):
     with open(output_file, "w") as f:
         for target, tf_id in imports:
-            f.write(f'''import {{
-  to = {target}
-  id = {tf_id}
-}}\n\n''')
+            f.write(f'''import {{\n  to = {target}\n  id = {tf_id}\n}}\n\n''')
     logging.info(f"✅ Wrote {len(imports)} import blocks to {output_file}")
-
 
 def run_imports(imports, execute=False):
     tf = Terraform()
@@ -157,13 +152,61 @@ def run_imports(imports, execute=False):
             else:
                 logging.info("✅ Success")
 
-def main():
+def export_project_id(modules, export_format=False):
+    seen = False
+    for module in modules:
+        for _, attrs in module.items():
+            if not seen and "project_id" in attrs:
+                if export_format:
+                    print(f"export GOOGLE_PROJECT={attrs['project_id']}")
+                else:
+                    print(f"Set GOOGLE_PROJECT={attrs['project_id']}")
+                seen = True
+                return
+
+def fix_state_project(resource_type, project_id, state_path="tfstate.json"):
+    import json
+    import uuid
+
+    with open(state_path) as f:
+        state = json.load(f)
+
+    fixed = False
+    for module in state.get("resources", []):
+        if module["type"].startswith("google_pubsub_") and module["type"].endswith("iam_member"):
+            for instance in module.get("instances", []):
+                attrs = instance.get("attributes", {})
+                if "project" not in attrs:
+                    attrs["project"] = project_id
+                    fixed = True
+
+    if fixed:
+        fixed_state = f"fixed-{uuid.uuid4().hex}.json"
+        with open(fixed_state, "w") as f:
+            json.dump(state, f, indent=2)
+        print(f"Updated state written to: {fixed_state}")
+        os.system(f"terraform state push {fixed_state}")
+    else:
+        print("No changes made to state.")
+
+
     args = parse_args()
     setup_logger(args.log)
     modules = parse_modules(args.file)
-    imports = build_imports(modules, args.type, args.mode)
+    imports = build_imports(modules, args.type, args.project_number)
     write_import_file(imports, args.output)
     run_imports(imports, args.execute)
+    if args.fix_state and args.project_number and args.type == "pubsub":
+        project_id = None
+        for module in modules:
+            for _, attrs in module.items():
+                if "project_id" in attrs:
+                    project_id = attrs["project_id"]
+                    break
+        if project_id:
+            os.system("terraform state pull > tfstate.json")
+            fix_state_project(args.type, project_id)
+    export_project_id(modules, args.export)
 
 if __name__ == "__main__":
     main()
