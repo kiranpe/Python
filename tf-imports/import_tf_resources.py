@@ -24,11 +24,12 @@ RESOURCE_MAP = {
         "subscription_pull": "google_pubsub_subscription.pull",
         "iam_topic": "google_pubsub_topic_iam_member",
         "iam_subscription": "google_pubsub_subscription_iam_member",
-        "project_iam": "google_project_iam_member.token_creator_binding"
+        "project_iam": "google_project_iam_member.token_creator_binding"        
     }
 }
 
 def parse_args():
+    parser = argparse.ArgumentParser(description="Generate import blocks for Terraform modules")
     parser = argparse.ArgumentParser(description="Generate import blocks for Terraform modules")
     parser.add_argument("--file", default="resources.tf", help="Path to the .tf file")
     parser.add_argument("--type", choices=RESOURCE_MAP.keys(), required=True)
@@ -38,6 +39,7 @@ def parse_args():
     parser.add_argument("--project-number", default=None, help="Project number for IAM service account email")
     parser.add_argument("--export", action="store_true", help="Output exportable project ID for sourcing")
     parser.add_argument("--fix-state", action="store_true", help="Fix missing 'project' in IAM state after apply")
+    parser.add_argument("--no-run-script", action="store_true", help="Generate import shell script but do not execute it")
     return parser.parse_args()
 
 def setup_logger(log_file=None):
@@ -119,11 +121,7 @@ def build_imports(modules, resource_type, project_number=None):
                         tf_id = f"projects/{project_id}/subscriptions/{sub_name}"
                         imports.append((tf_target, tf_id))
 
-                        if project_number:
-                            sa_email = f"service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com"
-                            iam_target = f'module.{mod_name}.{RESOURCE_MAP[resource_type]["iam_subscription"]}["{sub_name}_pull"]'
-                            iam_id = f"projects/{project_id}/subscriptions/{sub_name} roles/pubsub.subscriber serviceAccount:{sa_email}"
-                            imports.append((iam_target, iam_id))
+                        
 
                 if project_number and not token_creator_added:
                     sa_email = f"service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com"
@@ -132,6 +130,13 @@ def build_imports(modules, resource_type, project_number=None):
                     imports.append((tf_target, tf_id))
                     token_creator_added = True
 
+                        if project_number:
+                            sa_email = f"service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+                            iam_target = f'module.{mod_name}.{RESOURCE_MAP[resource_type]["iam_subscription"]}["{sub_name}_pull"]'
+                            iam_id = f"projects/{project_id}/subscriptions/{sub_name} roles/pubsub.subscriber serviceAccount:{sa_email}"
+                            imports.append((iam_target, iam_id))
+
+                
     return imports
 
 def write_import_file(imports, output_file):
@@ -140,17 +145,36 @@ def write_import_file(imports, output_file):
             f.write(f'''import {{\n  to = {target}\n  id = {tf_id}\n}}\n\n''')
     logging.info(f"✅ Wrote {len(imports)} import blocks to {output_file}")
 
-def run_imports(imports, execute=False):
+def run_imports(imports, execute=False, project_id=None, project_number=None, output_script="import_pubsub_iam.sh", no_run_script=False):
     tf = Terraform()
+    pubsub_iam_commands = []
+
     for target, resource_id in imports:
         logging.info(f">>> Importing: {target}")
         logging.info(f"    ID: {resource_id}")
+
         if execute:
-            code, out, err = tf.cmd("import", target, resource_id)
-            if code != 0:
-                logging.error(f"❌ Failed: {err}")
+            # Special case: for pubsub IAM resources, collect shell script
+            if "pubsub" in target and "iam_member" in target and "token_creator_binding" not in target:
+                member_cmd = f'GOOGLE_PROJECT="{project_id}" terraform import {target} "{resource_id}"
+'
+                pubsub_iam_commands.append(member_cmd)
             else:
-                logging.info("✅ Success")
+                code, out, err = tf.cmd("import", target, resource_id)
+                if code != 0:
+                    logging.error(f"❌ Failed: {err}")
+                else:
+                    logging.info("✅ Success")
+
+    # Write shell script if needed
+    if pubsub_iam_commands:
+        with open(output_script, "w") as f:
+            f.writelines(pubsub_iam_commands)
+        os.chmod(output_script, 0o755)
+        print(f"⚙️  Pub/Sub IAM import commands written to: {output_script}")
+        if execute and not no_run_script:
+            print("▶️  Executing pubsub IAM import script...")
+            os.system(f"./{output_script}")
 
 def export_project_id(modules, export_format=False):
     seen = False
@@ -190,12 +214,14 @@ def fix_state_project(resource_type, project_id, state_path="tfstate.json"):
         print("No changes made to state.")
 
 
+def main():
     args = parse_args()
     setup_logger(args.log)
     modules = parse_modules(args.file)
     imports = build_imports(modules, args.type, args.project_number)
     write_import_file(imports, args.output)
-    run_imports(imports, args.execute)
+    run_imports(imports, args.execute, project_id=args.project_number, project_number=args.project_number, no_run_script=args.no_run_script)
+
     if args.fix_state:
         if not args.execute:
             print("⚠️  '--fix-state' requires '--execute' to be set.")
@@ -204,16 +230,17 @@ def fix_state_project(resource_type, project_id, state_path="tfstate.json"):
         elif not args.project_number:
             print("⚠️  '--fix-state' requires '--project-number' to be provided.")
         else:
-        project_id = None
-        for module in modules:
-            for _, attrs in module.items():
-                if "project_id" in attrs:
-                    project_id = attrs["project_id"]
-                    break
-        if project_id:
-            os.system("terraform state pull > tfstate.json")
-            fix_state_project(args.type, project_id)
-        export_project_id(modules, args.export)
+            project_id = None
+            for module in modules:
+                for _, attrs in module.items():
+                    if "project_id" in attrs:
+                        project_id = attrs["project_id"]
+                        break
+            if project_id:
+                os.system("terraform state pull > tfstate.json")
+                fix_state_project(args.type, project_id)
+
+    export_project_id(modules, args.export)
 
 if __name__ == "__main__":
     main()
