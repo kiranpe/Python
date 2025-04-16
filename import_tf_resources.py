@@ -16,6 +16,14 @@ RESOURCE_MAP = {
     },
     "compute_instance": {
         "base": "google_compute_instance.this"
+    },
+    "pubsub": {
+        "topic": "google_pubsub_topic.this",
+        "subscription_push": "google_pubsub_subscription.push",
+        "subscription_pull": "google_pubsub_subscription.pull",
+        "iam_topic": "google_pubsub_topic_iam_member",
+        "iam_subscription": "google_pubsub_subscription_iam_member",
+        "project_iam": "google_project_iam_member.token_creator_binding"
     }
 }
 
@@ -24,8 +32,9 @@ def parse_args():
     parser.add_argument("--file", default="resources.tf", help="Path to .tf file")
     parser.add_argument("--type", choices=["service_account", "storage_bucket", "compute_instance"], required=True)
     parser.add_argument("--mode", choices=["member", "binding"], default="member", help="IAM mode (only for service_account)")
-    parser.add_argument("--execute", action="store_true", help="Run terraform import (default is dry-run)")
+    parser.add_argument("--project-number", help="Project number for Pub/Sub service account")
     parser.add_argument("--output", default="import.tf", help="Output file to write import blocks")
+    parser.add_argument("--execute", action="store_true", help="Run terraform import (default is dry-run)")
     parser.add_argument("--log", help="Log output to file")
     return parser.parse_args()
 
@@ -79,6 +88,49 @@ def build_imports(modules, resource_type, mode):
                 tf_target = f"module.{mod_name}.{RESOURCE_MAP[resource_type]['base']}"
                 tf_id = f"projects/{project_id}/zones/{zone}/instances/{name}"
                 imports.append((tf_target, tf_id))
+
+            elif resource_type == "pubsub":
+                topic_name = attrs.get("topic")
+                if topic_name:
+                    tf_target = f"module.{mod_name}.{RESOURCE_MAP[resource_type]['topic']}[0]"
+                    tf_id = f"projects/{project_id}/topics/{topic_name}"
+                    imports.append((tf_target, tf_id))
+
+                push_subs = attrs.get("push_subscriptions", [])
+                for sub in push_subs:
+                    sub_name = sub.get("name")
+                    if sub_name:
+                        tf_target = f'module.{mod_name}.{RESOURCE_MAP[resource_type]["subscription_push"]}["{sub_name}"]'
+                        tf_id = f"projects/{project_id}/subscriptions/{sub_name}"
+                        imports.append((tf_target, tf_id))
+
+                        if project_number:
+                            sa_email = f"service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+                            # iam_target = f'module.{mod_name}.{RESOURCE_MAP[resource_type]["iam_subscription"]}["{sub_name}_push"]'
+                            # iam_id = f"projects/{project_id}/subscriptions/{sub_name} roles/pubsub.subscriber serviceAccount:{sa_email}"
+                            # imports.append((iam_target, iam_id))
+
+                            tf_target = f"module.{mod_name}.{RESOURCE_MAP[resource_type]['project_iam']}[0]"
+                            tf_id = f"projects/{project_id}/roles/iam.serviceAccountTokenCreator serviceAccount:{sa_email}"
+                            imports.append((tf_target, tf_id))
+
+                pull_subs = attrs.get("pull_subscriptions", [])
+                for sub in pull_subs:
+                    sub_name = sub.get("name")
+                    if sub_name:
+                        tf_target = f'module.{mod_name}.{RESOURCE_MAP[resource_type]["subscription_pull"]}["{sub_name}"]'
+                        tf_id = f"projects/{project_id}/subscriptions/{sub_name}"
+                        imports.append((tf_target, tf_id))
+
+                        if project_number:
+                            sa_email = f"service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+                            # iam_target = f'module.{mod_name}.{RESOURCE_MAP[resource_type]["iam_subscription"]}["{sub_name}_pull"]'
+                            # iam_id = f"projects/{project_id}/subscriptions/{sub_name} roles/pubsub.subscriber serviceAccount:{sa_email}"
+                            # imports.append((iam_target, iam_id))
+
+                            tf_target = f"module.{mod_name}.{RESOURCE_MAP[resource_type]['project_iam']}[0]"
+                            tf_id = f"projects/{project_id}/roles/iam.serviceAccountTokenCreator serviceAccount:{sa_email}"
+                            imports.append((tf_target, tf_id))
 
     return imports
 
