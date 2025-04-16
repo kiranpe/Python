@@ -74,10 +74,4 @@ Generate and run `import_pubsub_iam.sh` for IAM resources
 
 Patch the state to add missing project fields after apply
 
-3. Pub/Sub with IAM — but Skip Auto Execution of Script
-If you want to review or manually run the IAM import shell script:
-
-```
-python import_resources.py --file resources.tf --type pubsub --project-number 123456789012 --execute --fix-state --no-run-script
-```
 
