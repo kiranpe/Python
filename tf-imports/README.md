@@ -1,3 +1,46 @@
+ Service Account Import
+ -----------------------
+ ```
+python import_resources.py \
+  --file resources.tf \
+  --type service_account \
+  --execute
+```
+
+This will:
+
+Import `google_service_account.this`
+
+Import all `google_service_account_iam_member["ROLE"]` if iam_roles is defined
+
+Storage Bucket Import
+---------------------
+
+```
+python import_resources.py \
+  --file resources.tf \
+  --type storage_bucket \
+  --execute
+```
+
+This will:
+
+Import `google_storage_bucket.this` using bucket_name
+
+Compute Instance Import
+------------------------
+
+```
+python import_resources.py \
+  --file resources.tf \
+  --type compute_instance \
+  --execute
+```
+
+This will:
+
+Import `google_compute_instance.this` using zone, name, and project_id
+
 pubsub
 --------
 
