@@ -24,7 +24,8 @@ RESOURCE_MAP = {
         "subscription_pull": "google_pubsub_subscription.pull",
         "iam_topic": "google_pubsub_topic_iam_member",
         "iam_subscription": "google_pubsub_subscription_iam_member",
-        "project_iam": "google_project_iam_member.token_creator_binding"        
+        "project_iam": "google_project_iam_member.token_creator_binding",
+        
     }
 }
 
@@ -54,6 +55,10 @@ def parse_modules(file_path):
         return hcl2.load(f).get("module", [])
 
 def build_imports(modules, resource_type, project_number=None):
+    def get_sa_email():
+        if project_number:
+            return f"service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+        return None
     imports = []
     token_creator_added = False
 
@@ -93,9 +98,10 @@ def build_imports(modules, resource_type, project_number=None):
                     tf_id = f"projects/{project_id}/topics/{topic_name}"
                     imports.append((tf_target, tf_id))
 
-                    if project_number:
-                        sa_email = f"service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com"
-                        iam_target = f"module.{mod_name}.{RESOURCE_MAP[resource_type]['iam_topic']}[\"roles/pubsub.publisher\"]"
+                    sa_email = get_sa_email()
+                    if not project_number:
+                        logging.warning(f"⚠️  Skipping IAM import for topic '{topic_name}' due to missing --project-number.")
+                    elif sa_email:
                         iam_id = f"projects/{project_id}/topics/{topic_name} roles/pubsub.publisher serviceAccount:{sa_email}"
                         imports.append((iam_target, iam_id))
 
@@ -107,9 +113,10 @@ def build_imports(modules, resource_type, project_number=None):
                         tf_id = f"projects/{project_id}/subscriptions/{sub_name}"
                         imports.append((tf_target, tf_id))
 
-                        if project_number:
-                            sa_email = f"service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com"
-                            iam_target = f'module.{mod_name}.{RESOURCE_MAP[resource_type]["iam_subscription"]}["{sub_name}_push"]'
+                        sa_email = get_sa_email()
+                        if not project_number:
+                            logging.warning(f"⚠️  Skipping IAM import for push subscription '{sub_name}' due to missing --project-number.")
+                        elif sa_email:
                             iam_id = f"projects/{project_id}/subscriptions/{sub_name} roles/pubsub.subscriber serviceAccount:{sa_email}"
                             imports.append((iam_target, iam_id))
 
@@ -121,17 +128,29 @@ def build_imports(modules, resource_type, project_number=None):
                         tf_id = f"projects/{project_id}/subscriptions/{sub_name}"
                         imports.append((tf_target, tf_id))
 
+                        sa_email = get_sa_email()
+                        if not project_number:
+                            logging.warning(f"⚠️  Skipping IAM import for pull subscription '{sub_name}' due to missing --project-number.")
+                        elif sa_email:
+                            iam_target = f'module.{mod_name}.{RESOURCE_MAP[resource_type]["iam_subscription"]}["{sub_name}_pull"]'
+                            iam_id = f"projects/{project_id}/subscriptions/{sub_name} roles/pubsub.subscriber serviceAccount:{sa_email}"
+                            imports.append((iam_target, iam_id))
+
                         
 
-                if project_number and not token_creator_added:
+                sa_email = get_sa_email()
+                if not project_number:
+                    logging.warning("⚠️  Skipping token_creator_binding because --project-number was not provided.")
+                elif sa_email and not token_creator_added:
                     sa_email = f"service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com"
                     tf_target = f"module.{mod_name}.{RESOURCE_MAP[resource_type]['project_iam']}[0]"
                     tf_id = f"projects/{project_id}/roles/iam.serviceAccountTokenCreator serviceAccount:{sa_email}"
                     imports.append((tf_target, tf_id))
                     token_creator_added = True
 
-                        if project_number:
-                            sa_email = f"service-{project_number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+                        if not project_number:
+                            logging.warning(f"⚠️  Skipping IAM import for pull subscription '{sub_name}' due to missing --project-number.")
+                        elif sa_email:
                             iam_target = f'module.{mod_name}.{RESOURCE_MAP[resource_type]["iam_subscription"]}["{sub_name}_pull"]'
                             iam_id = f"projects/{project_id}/subscriptions/{sub_name} roles/pubsub.subscriber serviceAccount:{sa_email}"
                             imports.append((iam_target, iam_id))
@@ -156,7 +175,7 @@ def run_imports(imports, execute=False, project_id=None, project_number=None, ou
         if execute:
             # Special case: for pubsub IAM resources, collect shell script
             if "pubsub" in target and "iam_member" in target and "token_creator_binding" not in target:
-                member_cmd = f'GOOGLE_PROJECT="{project_id}" terraform import {target} "{resource_id}"
+                member_cmd = f'terraform import {target} "{resource_id}"
 '
                 pubsub_iam_commands.append(member_cmd)
             else:
@@ -175,6 +194,8 @@ def run_imports(imports, execute=False, project_id=None, project_number=None, ou
         if execute and not no_run_script:
             print("▶️  Executing pubsub IAM import script...")
             os.system(f"./{output_script}")
+        elif no_run_script:
+            print("ℹ️  Skipped executing pubsub IAM script due to --no-run-script")
 
 def export_project_id(modules, export_format=False):
     seen = False
