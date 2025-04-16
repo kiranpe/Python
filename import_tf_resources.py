@@ -196,7 +196,14 @@ def fix_state_project(resource_type, project_id, state_path="tfstate.json"):
     imports = build_imports(modules, args.type, args.project_number)
     write_import_file(imports, args.output)
     run_imports(imports, args.execute)
-    if args.fix_state and args.project_number and args.type == "pubsub":
+    if args.fix_state:
+        if not args.execute:
+            print("⚠️  '--fix-state' requires '--execute' to be set.")
+        elif args.type != "pubsub":
+            print("⚠️  '--fix-state' currently only supported for --type=pubsub.")
+        elif not args.project_number:
+            print("⚠️  '--fix-state' requires '--project-number' to be provided.")
+        else:
         project_id = None
         for module in modules:
             for _, attrs in module.items():
@@ -206,7 +213,7 @@ def fix_state_project(resource_type, project_id, state_path="tfstate.json"):
         if project_id:
             os.system("terraform state pull > tfstate.json")
             fix_state_project(args.type, project_id)
-    export_project_id(modules, args.export)
+        export_project_id(modules, args.export)
 
 if __name__ == "__main__":
     main()
