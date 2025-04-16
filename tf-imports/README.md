@@ -41,21 +41,21 @@ This will:
 
 Import `google_compute_instance.this` using zone, name, and project_id
 
-pubsub
---------
+Pub/Sub (Topics, Subscriptions, IAM)
+------------------------------------
 
-1. Basic Pub/Sub Import (Topics + Subscriptions only)
-If you're importing topics and subscriptions (no IAM), run:
+Minimum setup (topics + subscriptions only):
 
 ```
-python import_resources.py --file resources.tf --type pubsub --execute
+python import_resources.py \
+  --file resources.tf \
+  --type pubsub \
+  --execute
 ```
 
 This will:
 
-Import topics and subscriptions
-
-Skip IAM roles gracefully if `--project-number` is not provided
+IAM imports will be skipped with warnings if --project-number is not provided.
 
 Log any skipped IAM blocks
 
