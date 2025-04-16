@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument("--file", default="resources.tf", help="Path to .tf file")
     parser.add_argument("--type", choices=["service_account", "storage_bucket", "compute_instance"], required=True)
     parser.add_argument("--mode", choices=["member", "binding"], default="member", help="IAM mode (only for service_account)")
-    parser.add_argument("--project-number", help="Project number for Pub/Sub service account")
+    parser.add_argument("--project-number", default=None, help="Project number for Pub/Sub service account")
     parser.add_argument("--output", default="import.tf", help="Output file to write import blocks")
     parser.add_argument("--execute", action="store_true", help="Run terraform import (default is dry-run)")
     parser.add_argument("--log", help="Log output to file")
