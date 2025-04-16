@@ -53,11 +53,12 @@ def build_imports(modules, resource_type, mode):
     imports = []
     for module in modules:
         for mod_name, attrs in module.items():
-            project_id = attrs.get("project_id")
-            name = attrs.get("name")
-            if not project_id or not name:
-                logging.warning(f"Skipping {mod_name} — missing project_id or name")
-                continue
+            project_id = attrs.get("project_id", "")
+            name = attrs.get("name", "")
+
+            # if not project_id or not name:
+            #     logging.warning(f"Skipping {mod_name} — missing project_id or name")
+            #     continue
 
             if resource_type == "service_account":
                 sa_email = f"{name}@{project_id}.iam.gserviceaccount.com"
